@@ -4,7 +4,7 @@
 import os
 import re
 import tempfile
-from datetime import datetime
+from datetime import datetime, timedelta
 
 import numpy as np
 import soundfile as sf
@@ -23,21 +23,23 @@ def timestamp_for_file(path):
     return timestamp
 
 
-def iso_week_for_file(path):
-    iso_year, iso_week, _ = timestamp_for_file(path).isocalendar()
-    return f"{iso_year}-W{iso_week:02d}"
+def period_for_file(path, reference_timestamp, latest_timestamp, period_days, period_label):
+    timestamp = timestamp_for_file(path)
+    period_index = (timestamp - reference_timestamp) // timedelta(days=period_days)
+    period_start = reference_timestamp + timedelta(days=period_index * period_days)
+    if period_start + timedelta(days=period_days) > latest_timestamp:
+        return None
+    return f"{period_start.year}-{period_label}{period_index + 1:02d}"
 
 
-def four_week_period_for_file(path):
-    iso_year, iso_week, _ = timestamp_for_file(path).isocalendar()
-    period = min((iso_week - 1) // 4 + 1, 13)
-    return f"{iso_year}-4W{period:02d}"
-
-
-def fortnightly_period_for_file(path):
-    iso_year, iso_week, _ = timestamp_for_file(path).isocalendar()
-    period = min((iso_week - 1) // 2 + 1, 27)
-    return f"{iso_year}-2W{period:02d}"
+def timestamp_range_suffix(file_paths):
+    timestamps = [timestamp_for_file(path) for path in file_paths]
+    first_timestamp = min(timestamps)
+    last_timestamp = max(timestamps)
+    return (
+        f"_{first_timestamp:%m%d%y-%H%M%S}"
+        f"_{last_timestamp:%m%d%y-%H%M%S}"
+    )
 
 
 def sum_audio_files(file_paths, output_path, normalization_factor=None):
@@ -111,47 +113,59 @@ def mix_audio_directory(audio_path, output_path):
         sum_audio_files(audio_files, output_path)
         return
 
+    timestamps_by_file = {
+        path: timestamp_for_file(path)
+        for path in audio_files
+    }
+    reference_timestamp = min(timestamps_by_file.values())
+    latest_timestamp = max(timestamps_by_file.values())
     files_by_four_week_period = {}
     files_by_fortnightly_period = {}
     files_by_week = {}
     for path in audio_files:
-        period = four_week_period_for_file(path)
-        files_by_four_week_period.setdefault(period, []).append(path)
-        fortnight = fortnightly_period_for_file(path)
-        files_by_fortnightly_period.setdefault(fortnight, []).append(path)
-        week = iso_week_for_file(path)
-        files_by_week.setdefault(week, []).append(path)
+        period = period_for_file(
+            path, reference_timestamp, latest_timestamp, 28, "4W"
+        )
+        if period is not None:
+            files_by_four_week_period.setdefault(period, []).append(path)
+        fortnight = period_for_file(
+            path, reference_timestamp, latest_timestamp, 14, "2W"
+        )
+        if fortnight is not None:
+            files_by_fortnightly_period.setdefault(fortnight, []).append(path)
+        week = period_for_file(
+            path, reference_timestamp, latest_timestamp, 7, "W"
+        )
+        if week is not None:
+            files_by_week.setdefault(week, []).append(path)
 
-    first_date = min(timestamp_for_file(path).date() for path in audio_files)
-    last_date = max(timestamp_for_file(path).date() for path in audio_files)
     output_root, output_extension = os.path.splitext(output_path)
     dated_output_path = (
-        f"{output_root}_{first_date.isoformat()}_{last_date.isoformat()}"
-        f"{output_extension}"
+        f"{output_root}{timestamp_range_suffix(audio_files)}{output_extension}"
     )
     normalization_factor = sum_audio_files(audio_files, dated_output_path)
     for period, period_files in sorted(files_by_four_week_period.items()):
         sum_audio_files(
             period_files,
-            f"{output_root}_{period}{output_extension}",
+            f"{output_root}_{period}{timestamp_range_suffix(period_files)}{output_extension}",
             normalization_factor,
         )
     for fortnight, fortnight_files in sorted(files_by_fortnightly_period.items()):
         sum_audio_files(
             fortnight_files,
-            f"{output_root}_{fortnight}{output_extension}",
+            f"{output_root}_{fortnight}{timestamp_range_suffix(fortnight_files)}{output_extension}",
             normalization_factor,
         )
     for week, week_files in sorted(files_by_week.items()):
         sum_audio_files(
             week_files,
-            f"{output_root}_{week}{output_extension}",
+            f"{output_root}_{week}{timestamp_range_suffix(week_files)}{output_extension}",
             normalization_factor,
         )
 
 
 def test_four_week_and_weekly_mixes():
-    """Verify total, fortnightly, four-week, and ISO-week mix outputs."""
+    """Verify total and anchored weekly, fortnightly, and four-week mix outputs."""
     sample_rate = 8000
     test_files = {
         "CATA01_070121-120000.wav": 0.2,
@@ -161,6 +175,8 @@ def test_four_week_and_weekly_mixes():
         "CATA01_123120-120000.wav": 0.05,
         "CATA01_010121-120000.wav": 0.06,
         "CATA01_010421-120000.wav": 0.07,
+        "CATA01_010721-115959.wav": 0.08,
+        "CATA01_010721-120000.wav": 0.09,
     }
 
     with tempfile.TemporaryDirectory() as temp_dir:
@@ -180,20 +196,16 @@ def test_four_week_and_weekly_mixes():
         mix_audio_directory(audio_path, output_path)
 
         expected_outputs = {
-            "master_output_2020-12-31_2021-08-01.wav",
-            "master_output_2021-4W07.wav",
-            "master_output_2021-4W08.wav",
-            "master_output_2020-4W13.wav",
-            "master_output_2021-4W01.wav",
-            "master_output_2021-2W01.wav",
-            "master_output_2021-2W13.wav",
-            "master_output_2021-2W15.wav",
-            "master_output_2020-2W27.wav",
-            "master_output_2021-W26.wav",
-            "master_output_2021-W29.wav",
-            "master_output_2021-W30.wav",
-            "master_output_2020-W53.wav",
-            "master_output_2021-W01.wav",
+            "master_output_123120-120000_080121-120000.wav",
+            "master_output_2020-4W01_123120-120000_010721-120000.wav",
+            "master_output_2021-4W07_070121-120000_070221-120000.wav",
+            "master_output_2020-2W01_123120-120000_010721-120000.wav",
+            "master_output_2021-2W14_070121-120000_070221-120000.wav",
+            "master_output_2021-2W15_072121-120000_072121-120000.wav",
+            "master_output_2020-W01_123120-120000_010721-115959.wav",
+            "master_output_2021-W02_010721-120000_010721-120000.wav",
+            "master_output_2021-W27_070121-120000_070221-120000.wav",
+            "master_output_2021-W29_072121-120000_072121-120000.wav",
         }
         actual_outputs = {
             filename
@@ -202,34 +214,30 @@ def test_four_week_and_weekly_mixes():
         }
         assert actual_outputs == expected_outputs, actual_outputs
 
-        normalization_factor = 1.0 / 1.18
+        normalization_factor = 1.0 / 1.35
         expected_values = {
-            "master_output_2020-12-31_2021-08-01.wav": 1.0,
-            "master_output_2021-4W07.wav": 0.3 * normalization_factor,
-            "master_output_2021-4W08.wav": 0.7 * normalization_factor,
-            "master_output_2020-4W13.wav": 0.11 * normalization_factor,
-            "master_output_2021-4W01.wav": 0.07 * normalization_factor,
-            "master_output_2021-2W01.wav": 0.07 * normalization_factor,
-            "master_output_2021-2W13.wav": 0.3 * normalization_factor,
-            "master_output_2021-2W15.wav": 0.7 * normalization_factor,
-            "master_output_2020-2W27.wav": 0.11 * normalization_factor,
-            "master_output_2021-W26.wav": 0.3 * normalization_factor,
-            "master_output_2021-W29.wav": 0.3 * normalization_factor,
-            "master_output_2021-W30.wav": 0.4 * normalization_factor,
-            "master_output_2020-W53.wav": 0.11 * normalization_factor,
-            "master_output_2021-W01.wav": 0.07 * normalization_factor,
+            "master_output_123120-120000_080121-120000.wav": 1.0,
+            "master_output_2020-4W01_123120-120000_010721-120000.wav": 0.35 * normalization_factor,
+            "master_output_2021-4W07_070121-120000_070221-120000.wav": 0.3 * normalization_factor,
+            "master_output_2020-2W01_123120-120000_010721-120000.wav": 0.35 * normalization_factor,
+            "master_output_2021-2W14_070121-120000_070221-120000.wav": 0.3 * normalization_factor,
+            "master_output_2021-2W15_072121-120000_072121-120000.wav": 0.3 * normalization_factor,
+            "master_output_2020-W01_123120-120000_010721-115959.wav": 0.26 * normalization_factor,
+            "master_output_2021-W02_010721-120000_010721-120000.wav": 0.09 * normalization_factor,
+            "master_output_2021-W27_070121-120000_070221-120000.wav": 0.3 * normalization_factor,
+            "master_output_2021-W29_072121-120000_072121-120000.wav": 0.3 * normalization_factor,
         }
         for filename, expected_value in expected_values.items():
             data, output_rate = sf.read(os.path.join(temp_dir, filename))
             assert output_rate == sample_rate, (filename, output_rate)
             assert np.allclose(data, expected_value, atol=1e-6), (filename, data)
 
-    print("PASS: total, fortnightly, four-week, and ISO-week mixes contain expected sums")
+    print("PASS: total, anchored weekly, fortnightly, and four-week mixes contain expected sums")
 
 
 def main():
     test_four_week_and_weekly_mixes()
-    mix_audio_directory('wavs/', "summed.wav")
+    #mix_audio_directory('2021_CATA_01_US/wavs', "summed.wav")
 
 
 
