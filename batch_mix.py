@@ -13,6 +13,8 @@ from unittest.mock import patch
 import numpy as np
 import soundfile as sf
 
+from audio_metadata import timestamp_for_file
+
 
 OUTPUT_METADATA_FILENAME = "output_metadata"
 OUTPUT_METADATA_COLUMNS = (
@@ -23,19 +25,6 @@ OUTPUT_METADATA_COLUMNS = (
     "integrated_lufs",
     "normalization_factor",
 )
-
-
-def timestamp_for_file(path):
-    match = re.search(r'(?<!\d)(\d{6}-\d{6})(?!\d)', os.path.basename(path))
-    if not match:
-        raise ValueError(f"No MMDDYY-HHMMSS timestamp found in filename: {path}")
-
-    try:
-        timestamp = datetime.strptime(match.group(1), "%m%d%y-%H%M%S")
-    except ValueError as error:
-        raise ValueError(f"Invalid timestamp in filename: {path}") from error
-
-    return timestamp
 
 
 def period_for_file(path, reference_timestamp, latest_timestamp, period_days, period_label):
