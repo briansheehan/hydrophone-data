@@ -1,6 +1,7 @@
 (
 s.waitForBoot({
-	~to_secs = Dictionary.newFrom([hour: 60*60, day: 24*60*60, year: 365*24*60*60]);
+	~to_secs = Dictionary.newFrom([minute: 60, hour: 60*60, day: 24*60*60, week:7*24*60*60,
+		fortnight:14*24*60*60, year: 365*24*60*60]);
 	~rate = 20;
 	~amp_scaling = 6;
 	~metadata_path = "/home/brian/Data/Stationary Hydrophone Data Collected in the Upper Colorado River, Colorado, 2021-24/2022 Test/output_metadata.csv";
@@ -15,16 +16,10 @@ s.waitForBoot({
 		});
 		datetimes = datetimes.collect({|row, idx|
 			[row[0].asInteger, row[1].asInteger, row[2].asInteger, row[3].asInteger,
-				row[4].asInteger, row[5].asInteger, row[6].asInteger, row[7], row[8]];
+				row[4].asInteger, row[5].asInteger, row[6].asInteger, row[7].asInteger,
+				row[8].asInteger, row[9], row[10], row[11]]
 		});
 		[col_names, datetimes];
-/*		datetime_objs = Array.fill(datetimes_csv.size, {|i|
-			var row = datetimes_csv[i];
-			// Date(row[0].asInteger, row[1].asInteger, row[2].asInteger, row[3].asInteger,
-			// row[4].asInteger, row[5].asInteger, row[6].asInteger, 0);
-			row[6].asInteger;
-		});
-		datetime_objs;*/
 	};
 
 
@@ -47,13 +42,30 @@ s.waitForBoot({
 		Out.ar(out, r.dup);
 	}).add;
 
-	SynthDef(\daySon, { |day_of_week, out=0|
+	SynthDef(\daySon, { |out=0, amp=0.5, day_of_week, timeScale|
 		var osc = SinOsc.ar((60 + day_of_week).midicps);
-		var env = EnvGen.kr(Env.perc, doneAction: Done.freeSelf);
+		var env = EnvGen.kr(
+			Env.perc(0.1*~to_secs[\day], 0.9*~to_secs[\day]),
+			timeScale: timeScale,
+			doneAction: Done.freeSelf);
 		var sig = osc * env;
-		day_of_week.postln;
+
 		Out.ar(out, sig.dup);
 	}).add;
+
+
+	SynthDef(\sampleSon, { |out=0, freq=440, amp=0.5, timeScale, sampleLength|
+		var sig, env, env2;
+		// Envelope times are written in BEATS (0.1 beats attack, 0.9 beats release)
+		env = EnvGen.kr(
+			Env.perc(0.1*sampleLength, 0.9*sampleLength),
+			timeScale: timeScale,
+			doneAction: Done.freeSelf
+		);
+		sig = SinOsc.ar(freq) * env * amp;
+		Out.ar(out, sig.dup);
+	}).add;
+
 
 	~minute_mixes = Routine({
 		var metadata_2D_array = ~read_metadata.(~metadata_path);
@@ -100,29 +112,69 @@ s.waitForBoot({
 	The daily pattern (every 15 mins for one minute)
 	Every day during the study duration for that year.
 	*/
-
-
-
-
-
 });
 )
 
 
 (
-var keys, datetimes;
-#keys, datetimes = ~read_datetimes.("2022_CATA_01_US_every_day.csv");
-d = Pseq(datetimes);
-b = Pbind(
+var keys, days, daysSeq, daysBind, samples, samplesSeq, samplesBind;
+#keys, days = ~read_datetimes.("2022_CATA_01_US_every_day.csv");
+keys.postln;
+days[0].postln;
+postln("Datetimes size: " + days.size);
+daysSeq = Pseq(days);
+daysBind = Pbind(
 	\instrument, \daySon,
-	keys, d;
+	keys, daysSeq
 );
+daysBind.play;
+
 )
+(
+var keys, samples, days, samplesSeq, daysSeq, durations, durationsSeq, samplesBind, daysBind;
+#keys, samples = ~read_datetimes.("2022_CATA_01_US.csv");
+keys.postln;
+postln("Datetimes size: " + samples.size);
+samplesSeq = Pseq(samples);
+durations = samples.collect({|row, idx| row[7]}); //row[7] indexes seconds_to_next
+durations.postln;
+durationsSeq = Pseq(durations);
+samplesBind = Pbind(
+	\instrument, \sampleSon,
+	\dur, durationsSeq,
+	\sampleLength, 60, //each sample is a wav 60 seconds long
+	\timeScale, Pfunc({ thisThread.clock.beatDur }),
+	keys, samplesSeq;
+);
+
+#keys, days = ~read_datetimes.("2022_CATA_01_US_every_day.csv");
+keys.postln;
+days[0].postln;
+postln("Everydays size: " + days.size);
+daysSeq = Pseq(days);
+daysBind = Pbind(
+	\instrument, \daySon,
+	\timeScale, Pfunc({ thisThread.clock.beatDur }),
+	\dur, ~to_secs[\day],
+	keys, daysSeq
+);
+
+c = TempoClock(~to_secs[\day]);
+samplesBind.play(c);
+daysBind.play(c);
+)
+
 //1 beat per day = 1 beat every 60*60*24 seconds 86400
 60*60*24;
 
 ~to_secs[\year];
+1/~to_secs[\year];
 c = TempoClock(1/~to_secs[\year]);
 c.tempo = c.tempo * 100;
+c = TempoClock(2);
+c.tempo = ~to_secs[\day]/~to_secs[\year];
+~to_secs[\day];
+
+
 ~seq = b.play(c);
 ~seq.stop;

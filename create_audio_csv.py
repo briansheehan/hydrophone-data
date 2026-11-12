@@ -2,34 +2,28 @@ import argparse
 import csv
 from datetime import date, datetime, time, timedelta
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 from audio_metadata import timestamp_for_file
 
 
 AUDIO_EXTENSIONS = {".flac", ".wav"}
-CSV_COLUMNS = (
+SHARED_COLUMNS = (
     "year",
     "month",
     "day",
     "hour",
     "minute",
     "seconds",
+    "raw_seconds",
+    "seconds_to_next",
     "day_of_week",
     "day_of_week_str",
+    "timestamp",
     "file_path",
-    "timestamp",
 )
-EVERY_DAY_COLUMNS = (
-    "year",
-    "month",
-    "day",
-    "hour",
-    "minute",
-    "seconds",
-    "day_of_week",
-    "day_of_week_str",
-    "timestamp",
-)
+CSV_COLUMNS = SHARED_COLUMNS
+EVERY_DAY_COLUMNS = SHARED_COLUMNS
 
 
 def _audio_rows(audio_directory):
@@ -44,15 +38,19 @@ def _audio_rows(audio_directory):
     ]
 
 
-def _timestamp_row(timestamp, file_path=None):
+def _timestamp_row(timestamp, file_path=None, seconds_to_next="None"):
     row = {
         "timestamp": timestamp.isoformat(),
+        "seconds_to_next": seconds_to_next,
         "year": timestamp.year,
         "month": f"{timestamp.month:02d}",
         "day": f"{timestamp.day:02d}",
         "hour": f"{timestamp.hour:02d}",
         "minute": f"{timestamp.minute:02d}",
         "seconds": f"{timestamp.second:02d}",
+        "raw_seconds": int(
+            timestamp.replace(tzinfo=ZoneInfo("America/Denver")).timestamp()
+        ),
         "day_of_week": f"{(timestamp.weekday() + 1) % 7:02d}",
         "day_of_week_str": timestamp.strftime("%A"),
     }
@@ -86,8 +84,15 @@ def create_audio_csv(audio_directory):
     with output_file.open("w", newline="", encoding="utf-8") as csv_file:
         writer = csv.DictWriter(csv_file, fieldnames=CSV_COLUMNS)
         writer.writeheader()
-        for timestamp, file_path in audio_rows:
-            writer.writerow(_timestamp_row(timestamp, file_path))
+        for index, (timestamp, file_path) in enumerate(audio_rows):
+            seconds_to_next = (
+                int((audio_rows[index + 1][0] - timestamp).total_seconds())
+                if index + 1 < len(audio_rows)
+                else "None"
+            )
+            writer.writerow(
+                _timestamp_row(timestamp, file_path, seconds_to_next)
+            )
 
     return output_file
 
@@ -107,7 +112,23 @@ def create_every_day_csv(audio_directory):
         day = date(year, 1, 1)
         while day.year == year:
             timestamp = datetime.combine(day, time.min)
-            writer.writerow(_timestamp_row(timestamp))
+            next_day = day + timedelta(days=1)
+            seconds_to_next = (
+                int(
+                    (
+                        datetime.combine(next_day, time.min) - timestamp
+                    ).total_seconds()
+                )
+                if next_day.year == year
+                else "None"
+            )
+            writer.writerow(
+                _timestamp_row(
+                    timestamp,
+                    file_path="None",
+                    seconds_to_next=seconds_to_next,
+                )
+            )
             day += timedelta(days=1)
 
     return output_file
