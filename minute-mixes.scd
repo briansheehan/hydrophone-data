@@ -60,7 +60,7 @@ s.waitForBoot({
 
 	SynthDef(\sampleSon, { |out=0, freq=440, amp=0.5, timeScale, sampleLength|
 		var sig, env, env2;
-		// Envelope times are written in BEATS (0.1 beats attack, 0.9 beats release)
+		// Envelope times are written in realtime seconds, before timeScale adjustment
 		env = EnvGen.kr(
 			Env.perc(0.1*sampleLength, 0.9*sampleLength),
 			timeScale: timeScale,
@@ -109,50 +109,59 @@ s.waitForBoot({
 			free(buf);
 		};
 		postln("End freeing buffers");
-	})
+	});
 /*
 	Excercise to explore using patterns. Build patterns to represent the data
 	collection schedule of the river study:
 	The daily pattern (every 15 mins for one minute)
 	Every day during the study duration for that year.
 	*/
+	~makeDaysBind = { |filepath|
+		var keys, days, firstJan, daysSeq, daysBind;
+
+		#keys, days = ~read_datetimes.(filepath);
+		keys.postln;
+		firstJan = days[0][6].postln;//New Year's Day in raw seconds
+		postln("Everydays size: " + days.size);
+		daysSeq = Pseq(days);
+		daysBind = Pbind(
+			\instrument, \daySon,
+			\timeScale, Pfunc({ thisThread.clock.beatDur }),
+			\dur, ~to_secs[\day],
+			keys, daysSeq
+		);
+		[firstJan, daysBind];
+	};
+
+	~makeSamplesBind = {|filepath, firstJan|
+		var keys, samples, samplesSeq, daysSeq, secsToFirstSample, restToFirstSample, samplesBind;
+		#keys, samples = ~read_datetimes.(filepath);
+		keys.postln;
+		postln("Datetimes size: " + samples.size);
+		secsToFirstSample = samples[0][6] - firstJan; //samples[0][6] indexes the raw_seconds field of the first sample row
+		restToFirstSample = [0,0,0,0,0,0,0, Rest(secsToFirstSample), 0, "None", "None", "None"]; // \dur key will map to the rest
+		postf("Samples[0] size: %. restToFirstSample size: %\n", samples[0].size, restToFirstSample.size);
+		restToFirstSample.postln;
+		samplesSeq = Pseq([restToFirstSample] ++ samples);
+		samples[0].postln;
+
+		samplesBind = Pbind(
+			\instrument, \sampleSon,
+			\sampleLength, 60, //each sample is a wav 60 seconds long
+			\timeScale, Pfunc({ thisThread.clock.beatDur }),
+			keys, samplesSeq;
+		);
+	};
 });
 )
 
 (
-var keys, samples, days, firstJan, samplesSeq, daysSeq, secsToFirstSample, restToFirstSample, samplesBind, daysBind;
+var firstJan, samplesBind, daysBind;
 
-#keys, days = ~read_datetimes.("2022_CATA_01_US_every_day.csv");
-keys.postln;
-firstJan = days[0][6].postln;//New Year's Day in raw seconds
-postln("Everydays size: " + days.size);
-daysSeq = Pseq(days);
-daysBind = Pbind(
-	\instrument, \daySon,
-	\timeScale, Pfunc({ thisThread.clock.beatDur }),
-	\dur, ~to_secs[\day],
-	keys, daysSeq
-);
+#firstJan, daysBind = ~makeDaysBind.("2022_CATA_01_US_every_day.csv");
+samplesBind = ~makeSamplesBind.("2022_CATA_01_US.csv", firstJan);
 
-#keys, samples = ~read_datetimes.("2022_CATA_01_US.csv");
-keys.postln;
-postln("Datetimes size: " + samples.size);
-secsToFirstSample = (samples[0][6] - firstJan).postln;
-restToFirstSample = [0,0,0,0,0,0,0, Rest(secsToFirstSample), 0, "None", "None", "None"];
-samplesSeq = Pseq(restToFirstSample ++ samples);
-//durations = samples.collect({|row, idx| row[7]}); //row[7] indexes seconds_to_next
-//durations.postln;
-//durationsSeq = Pseq(durations);
-samplesBind = Pbind(
-	\instrument, \sampleSon,
-//	\dur, durationsSeq,
-	\sampleLength, 60, //each sample is a wav 60 seconds long
-	\timeScale, Pfunc({ thisThread.clock.beatDur }),
-	keys, samplesSeq;
-);
-
-
-c = TempoClock(~to_secs[\day]);
+c = TempoClock(~to_secs[\fortnight]);
 samplesBind.play(c);
 daysBind.play(c);
 )
