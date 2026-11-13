@@ -12,7 +12,11 @@ s.waitForBoot({
 			skipEmptyLines:true, skipBlanks:true);
 		var col_names = datetimes.removeAt(0); //column headings.
 		col_names = col_names.collect({|item, idx|
+			if (item == "seconds_to_next") {
+				\dur;
+			} {
 			item.asSymbol;
+			}
 		});
 		datetimes = datetimes.collect({|row, idx|
 			[row[0].asInteger, row[1].asInteger, row[2].asInteger, row[3].asInteger,
@@ -115,41 +119,12 @@ s.waitForBoot({
 });
 )
 
-
 (
-var keys, days, daysSeq, daysBind, samples, samplesSeq, samplesBind;
-#keys, days = ~read_datetimes.("2022_CATA_01_US_every_day.csv");
-keys.postln;
-days[0].postln;
-postln("Datetimes size: " + days.size);
-daysSeq = Pseq(days);
-daysBind = Pbind(
-	\instrument, \daySon,
-	keys, daysSeq
-);
-daysBind.play;
-
-)
-(
-var keys, samples, days, samplesSeq, daysSeq, durations, durationsSeq, samplesBind, daysBind;
-#keys, samples = ~read_datetimes.("2022_CATA_01_US.csv");
-keys.postln;
-postln("Datetimes size: " + samples.size);
-samplesSeq = Pseq(samples);
-durations = samples.collect({|row, idx| row[7]}); //row[7] indexes seconds_to_next
-durations.postln;
-durationsSeq = Pseq(durations);
-samplesBind = Pbind(
-	\instrument, \sampleSon,
-	\dur, durationsSeq,
-	\sampleLength, 60, //each sample is a wav 60 seconds long
-	\timeScale, Pfunc({ thisThread.clock.beatDur }),
-	keys, samplesSeq;
-);
+var keys, samples, days, firstJan, samplesSeq, daysSeq, secsToFirstSample, restToFirstSample, samplesBind, daysBind;
 
 #keys, days = ~read_datetimes.("2022_CATA_01_US_every_day.csv");
 keys.postln;
-days[0].postln;
+firstJan = days[0][6].postln;//New Year's Day in raw seconds
 postln("Everydays size: " + days.size);
 daysSeq = Pseq(days);
 daysBind = Pbind(
@@ -159,11 +134,30 @@ daysBind = Pbind(
 	keys, daysSeq
 );
 
+#keys, samples = ~read_datetimes.("2022_CATA_01_US.csv");
+keys.postln;
+postln("Datetimes size: " + samples.size);
+secsToFirstSample = (samples[0][6] - firstJan).postln;
+restToFirstSample = [0,0,0,0,0,0,0, Rest(secsToFirstSample), 0, "None", "None", "None"];
+samplesSeq = Pseq(restToFirstSample ++ samples);
+//durations = samples.collect({|row, idx| row[7]}); //row[7] indexes seconds_to_next
+//durations.postln;
+//durationsSeq = Pseq(durations);
+samplesBind = Pbind(
+	\instrument, \sampleSon,
+//	\dur, durationsSeq,
+	\sampleLength, 60, //each sample is a wav 60 seconds long
+	\timeScale, Pfunc({ thisThread.clock.beatDur }),
+	keys, samplesSeq;
+);
+
+
 c = TempoClock(~to_secs[\day]);
 samplesBind.play(c);
 daysBind.play(c);
 )
 
+~to_secs[\fortnight];
 //1 beat per day = 1 beat every 60*60*24 seconds 86400
 60*60*24;
 
