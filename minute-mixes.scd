@@ -26,6 +26,23 @@ s.waitForBoot({
 		[col_names, datetimes];
 	};
 
+	~read_sunrises = { |filepath|
+		var sunrises = CSVFileReader.read((filepath).resolveRelative,
+			skipEmptyLines:true, skipBlanks:true);
+		var col_names = sunrises.removeAt(0); //column headings.
+		col_names = col_names.collect({|item, idx|
+			if (item == "seconds_to_next") {
+				\dur;
+			} {
+			item.asSymbol;
+			}
+		});
+		sunrises = sunrises.collect({|row, idx|
+			[row[0], row[1].asInteger, row[2].asInteger, row[3].asInteger, row[4].asInteger]
+		});
+		[col_names, sunrises];
+	};
+
 
 	~read_metadata = { |path|
 		CSVFileReader.read(~metadata_path, skipEmptyLines:true, skipBlanks:true);
@@ -49,7 +66,9 @@ s.waitForBoot({
 	SynthDef(\daySon, { |out=0, amp=0.5, day_of_week, timeScale|
 		var osc = SinOsc.ar((60 + day_of_week).midicps);
 		var env = EnvGen.kr(
-			Env.perc(0.1*~to_secs[\day], 0.9*~to_secs[\day]),
+			//Env.step([1], [~to_secs[\day]]),
+			Env.linen(attackTime:~to_secs[\day]*0.01, sustainTime:~to_secs[\day]*0.98, releaseTime:~to_secs[\day]*0.01),
+			//Env.perc(0.1*~to_secs[\day], 0.9*~to_secs[\day]),
 			timeScale: timeScale,
 			doneAction: Done.freeSelf);
 		var sig = osc * env;
@@ -57,6 +76,24 @@ s.waitForBoot({
 		Out.ar(out, sig.dup);
 	}).add;
 
+	SynthDef(\sunSon, { |out=0, freq=880, amp=0.5, timeScale, daylight, seconds_to_noon, dur|
+		var sig, env, env2, sig2;
+		// Envelope times are written in realtime seconds, before timeScale adjustment
+		env = EnvGen.kr(
+			//Env.perc(seconds_to_noon, daylight - seconds_to_noon, curve:0),
+			Env.linen(attackTime:daylight*0.01, sustainTime:daylight*0.98, releaseTime:daylight*0.01),
+			timeScale: timeScale
+			//doneAction: Done.freeSelf
+		);
+		sig = SinOsc.ar(freq) * env * amp;
+		env2 = EnvGen.kr(
+			Env.perc(dur/2, dur/2, curve:0),
+			timeScale: timeScale,
+			doneAction: Done.freeSelf
+		);
+		sig2 = Saw.ar(freq/4) * env2 * amp;
+		Out.ar(out, [sig, sig2]);
+	}).add;
 
 	SynthDef(\sampleSon, { |out=0, freq=440, amp=0.5, timeScale, sampleLength|
 		var sig, env, env2;
@@ -152,32 +189,47 @@ s.waitForBoot({
 			keys, samplesSeq;
 		);
 	};
+
+	~makeSunrisesBind = {|filepath, firstJan|
+		var keys, sunrises, secsToFirstSunrise, restToFirstSunrise, sunrisesSeq, sunrisesBind;
+		#keys, sunrises = ~read_sunrises.("McCoy_sunrise_sunset_2022.csv");
+sunrises.postln;
+keys.postln;
+		secsToFirstSunrise = sunrises[0][1] - firstJan;
+		restToFirstSunrise = ["None", 0, 0, 0, Rest(secsToFirstSunrise)]; // rest will map to the \dur key
+		sunrisesSeq = Pseq([restToFirstSunrise] ++ sunrises);
+		sunrisesBind = Pbind(
+			\instrument, \sunSon,
+			\timeScale, Pfunc({ thisThread.clock.beatDur }),
+			keys, sunrisesSeq;
+		);
+	};
+
 });
 )
 
 (
-var firstJan, samplesBind, daysBind;
+var keys, sunrises, firstJan, samplesBind, daysBind, sunrisesSeq, sunrisesBind, secsToFirstSunrise, restToFirstSunrise;
+
 
 #firstJan, daysBind = ~makeDaysBind.("2022_CATA_01_US_every_day.csv");
 samplesBind = ~makeSamplesBind.("2022_CATA_01_US.csv", firstJan);
+sunrisesBind = ~makeSunrisesBind.("McCoy_sunrise_sunset_2022.csv", firstJan);
 
-c = TempoClock(~to_secs[\fortnight]);
-samplesBind.play(c);
+c = TempoClock(~to_secs[\hour]);
+//samplesBind.play(c);
 daysBind.play(c);
+sunrisesBind.play(c);
 )
 
-~to_secs[\fortnight];
-//1 beat per day = 1 beat every 60*60*24 seconds 86400
-60*60*24;
-
-~to_secs[\year];
-1/~to_secs[\year];
-c = TempoClock(1/~to_secs[\year]);
-c.tempo = c.tempo * 100;
-c = TempoClock(2);
-c.tempo = ~to_secs[\day]/~to_secs[\year];
-~to_secs[\day];
+c.tempo = ~to_secs[\hour];
+Env.perc( 1, 1, 1, -4).test.plot;
+Env.perc( 1, 1, 1, -2).test.plot;
+Env.perc( 1, 1, 1, 0).test.plot;
+Env.perc( 1, 1, 1, 2).test.plot;
+Env.perc( 1, 1, 1, 4).test.plot;
+Env.perc(0.001, 1, 1, -4).test.plot;    // sharper attack
+Env.perc(0.001, 1, 1, -8).test.plot;    // change curvature
+Env.perc(1, 0.01, 1, 4).test.plot;    // reverse envelope
 
 
-~seq = b.play(c);
-~seq.stop;

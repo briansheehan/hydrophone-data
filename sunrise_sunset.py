@@ -43,15 +43,20 @@ def main():
 
         while current_date <= end_date:
             s = sun(city.observer, date=current_date, tzinfo=tz)
+            s_next = sun(city.observer, date=(current_date + timedelta(days=1)), tzinfo=tz)
 
             sunrise = s["sunrise"]
             sunset = s["sunset"]
             daylight = sunset - sunrise
+            noon = s["noon"]
+            next = s_next["sunrise"]
 
             rows.append({
                 "sunrise": sunrise.isoformat(),
-                "sunset": sunset.isoformat(),
-                "seconds_of_light": daylight.total_seconds(),
+                "raw_seconds": sunrise.timestamp(),
+                "daylight": daylight.total_seconds(),
+                "seconds_to_noon": (noon - sunrise).total_seconds(),
+                "seconds_to_next": (next - sunrise).total_seconds() 
             })
 
             current_date += timedelta(days=1)
