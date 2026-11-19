@@ -63,36 +63,28 @@ s.waitForBoot({
 		Out.ar(out, r.dup);
 	}).add;
 
-	SynthDef(\daySon, { |out=0, amp=0.5, day_of_week, timeScale|
-		var osc = SinOsc.ar((60 + day_of_week).midicps);
-		var env = EnvGen.kr(
-			//Env.step([1], [~to_secs[\day]]),
+	SynthDef(\daySon, { |out=0, amp=0.4, day_of_week, timeScale|
+		var osc, env, sig;
+		osc = SinOsc.ar((40 + day_of_week).midicps);
+		env = EnvGen.kr(
 			Env.linen(attackTime:~to_secs[\day]*0.01, sustainTime:~to_secs[\day]*0.98, releaseTime:~to_secs[\day]*0.01),
-			//Env.perc(0.1*~to_secs[\day], 0.9*~to_secs[\day]),
 			timeScale: timeScale,
 			doneAction: Done.freeSelf);
-		var sig = osc * env;
-
+		sig = osc * env;
 		Out.ar(out, sig.dup);
 	}).add;
 
-	SynthDef(\sunSon, { |out=0, freq=880, amp=0.5, timeScale, daylight, seconds_to_noon, dur|
-		var sig, env, env2, sig2;
+	SynthDef(\sunSon, { |out=0, freq=440, amp=0.4, timeScale, daylight, seconds_to_noon|
+		var sig, env;
 		// Envelope times are written in realtime seconds, before timeScale adjustment
 		env = EnvGen.kr(
-			//Env.perc(seconds_to_noon, daylight - seconds_to_noon, curve:0),
 			Env.linen(attackTime:daylight*0.01, sustainTime:daylight*0.98, releaseTime:daylight*0.01),
-			timeScale: timeScale
-			//doneAction: Done.freeSelf
-		);
-		sig = SinOsc.ar(freq) * env * amp;
-		env2 = EnvGen.kr(
-			Env.perc(dur/2, dur/2, curve:0),
 			timeScale: timeScale,
 			doneAction: Done.freeSelf
 		);
-		sig2 = Saw.ar(freq/4) * env2 * amp;
-		Out.ar(out, [sig, sig2]);
+		sig = SinOsc.ar(freq) * env * amp;
+
+		Out.ar(out, [sig, sig]);
 	}).add;
 
 	SynthDef(\sampleSon, { |out=0, freq=440, amp=0.5, timeScale, sampleLength|
@@ -197,7 +189,9 @@ sunrises.postln;
 keys.postln;
 		secsToFirstSunrise = sunrises[0][1] - firstJan;
 		restToFirstSunrise = ["None", 0, 0, 0, Rest(secsToFirstSunrise)]; // rest will map to the \dur key
-		sunrisesSeq = Pseq([restToFirstSunrise] ++ sunrises);
+		a = [restToFirstSunrise] ++ sunrises;
+		a.postln;
+		sunrisesSeq = Pseq(a);
 		sunrisesBind = Pbind(
 			\instrument, \sunSon,
 			\timeScale, Pfunc({ thisThread.clock.beatDur }),
@@ -216,10 +210,9 @@ var keys, sunrises, firstJan, samplesBind, daysBind, sunrisesSeq, sunrisesBind, 
 samplesBind = ~makeSamplesBind.("2022_CATA_01_US.csv", firstJan);
 sunrisesBind = ~makeSunrisesBind.("McCoy_sunrise_sunset_2022.csv", firstJan);
 
-c = TempoClock(~to_secs[\hour]);
-//samplesBind.play(c);
-daysBind.play(c);
+c = TempoClock(~to_secs[\week] * 4);
 sunrisesBind.play(c);
+//~combined = Ppar([daysBind, sunrisesBind]).play(c);
 )
 
 c.tempo = ~to_secs[\hour];
