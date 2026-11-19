@@ -70,11 +70,11 @@ s.waitForBoot({
 			Env.linen(attackTime:~to_secs[\day]*0.01, sustainTime:~to_secs[\day]*0.98, releaseTime:~to_secs[\day]*0.01),
 			timeScale: timeScale,
 			doneAction: Done.freeSelf);
-		sig = osc * env;
+		sig = osc * env * amp;
 		Out.ar(out, sig.dup);
 	}).add;
 
-	SynthDef(\sunSon, { |out=0, freq=440, amp=0.4, timeScale, daylight, seconds_to_noon|
+	SynthDef(\sunSon, { |out=0, freq=880, amp=0.4, timeScale, daylight, seconds_to_noon|
 		var sig, env;
 		// Envelope times are written in realtime seconds, before timeScale adjustment
 		env = EnvGen.kr(
@@ -95,7 +95,7 @@ s.waitForBoot({
 			timeScale: timeScale,
 			doneAction: Done.freeSelf
 		);
-		sig = SinOsc.ar(freq) * env * amp;
+		sig = WhiteNoise.ar() * env * amp;
 		Out.ar(out, sig.dup);
 	}).add;
 
@@ -210,19 +210,17 @@ var keys, sunrises, firstJan, samplesBind, daysBind, sunrisesSeq, sunrisesBind, 
 samplesBind = ~makeSamplesBind.("2022_CATA_01_US.csv", firstJan);
 sunrisesBind = ~makeSunrisesBind.("McCoy_sunrise_sunset_2022.csv", firstJan);
 
-c = TempoClock(~to_secs[\week] * 4);
-sunrisesBind.play(c);
-//~combined = Ppar([daysBind, sunrisesBind]).play(c);
+c = TempoClock(~to_secs[\hour]);
+//sunrisesBind.play(c);
+~combined = Ppar([daysBind, samplesBind, sunrisesBind]).play(c);
 )
 
-c.tempo = ~to_secs[\hour];
-Env.perc( 1, 1, 1, -4).test.plot;
-Env.perc( 1, 1, 1, -2).test.plot;
-Env.perc( 1, 1, 1, 0).test.plot;
-Env.perc( 1, 1, 1, 2).test.plot;
-Env.perc( 1, 1, 1, 4).test.plot;
-Env.perc(0.001, 1, 1, -4).test.plot;    // sharper attack
-Env.perc(0.001, 1, 1, -8).test.plot;    // change curvature
-Env.perc(1, 0.01, 1, 4).test.plot;    // reverse envelope
+c.tempo = ~to_secs[\day];
+c.tempo = ~to_secs[\week];
+c.tempo = ~to_secs[\fortnight];
+c.tempo = ~to_secs[\fortnight]*2;
+c.tempo = ~to_secs[\year]/4;
+c.tempo = ~to_secs[\year]/2;
+
 
 
