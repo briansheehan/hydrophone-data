@@ -87,7 +87,7 @@ s.waitForBoot({
 		Out.ar(out, [sig, sig]);
 	}).add;
 
-	SynthDef(\sampleSon, { |out=0, freq=440, amp=0.5, timeScale, sampleLength|
+	SynthDef(\sampleSon, { |out=0, freq=440, amp=0.3, timeScale, sampleLength|
 		var sig, env, env2;
 		// Envelope times are written in realtime seconds, before timeScale adjustment
 		env = EnvGen.kr(
@@ -215,6 +215,10 @@ c = TempoClock(~to_secs[\hour]);
 ~combined = Ppar([daysBind, samplesBind, sunrisesBind]).play(c);
 )
 
+c.tempo = ~to_secs[\hour];
+c.tempo = ~to_secs[\hour] * 2;
+c.tempo = ~to_secs[\hour] * 6;
+c.tempo = ~to_secs[\hour] * 12;
 c.tempo = ~to_secs[\day];
 c.tempo = ~to_secs[\week];
 c.tempo = ~to_secs[\fortnight];
